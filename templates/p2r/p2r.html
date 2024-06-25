@@ -1,0 +1,183 @@
+{% extends "public.html" %} {% block page %}
+<div class="row q-col-gutter-md justify-center">
+
+  <q-card class="q-pa-lg q-pt-xl" style="width: 500px">
+    <q-form @submit="sendReviewData" class="q-gutter-md">
+      <h5> ${formDialog.data.item_id}</h5>
+      <q-rating filled dense size="3em" v-model="formDialog.data.review_int" max="5"></q-rating>
+      <q-input filled dense v-model.trim="formDialog.data.name" label="Name" placeholder="your name"></q-input>
+      <q-input filled dense type="textarea" v-model.trim="formDialog.data.review_text"
+        :label="'Review (max length ' + review_length + ' characters)'" :maxlength="review_length"></q-input>
+      <div class="row q-mt-lg">
+        <q-btn unelevated color="primary"
+          :disable="!formDialog.data.name || !formDialog.data.review_text || !formDialog.data.review_int"
+          type="submit">Create review</q-btn>
+        <q-btn v-close-popup flat color="grey" class="q-ml-auto">Cancel</q-btn>
+      </div>
+    </q-form>
+  </q-card>
+
+  <div class="col-12 col-sm-6 col-md-5 col-lg-4 q-gutter-y-md">
+    <q-card>
+      <q-card-section>
+        <h6 class="text-subtitle1 q-mb-sm q-mt-none">${p2r_name}</h6>
+        <p class="q-my-none">
+          ${p2r_description}
+      </q-card-section>
+      <q-card-section class="q-pa-none">
+        <q-card>
+          <q-card-section>
+            <div class="row items-center no-wrap q-mb-md">
+              <div class="col">
+                <h5 class="text-subtitle1 q-my-none">Reviews</h5>
+              </div>
+            </div>
+            <q-table dense flat :data="reviews" row-key="id" :columns="reviewsTable.columns"
+              :pagination.sync="reviewsTable.pagination">
+              <template v-slot:header="props">
+                <q-tr :props="props">
+                  <q-th v-for="col in props.cols" :key="col.name" :props="props">
+                    ${ col.label }
+                  </q-th>
+                </q-tr>
+              </template>
+
+              <template v-slot:body="props">
+                <q-tr :props="props">
+                  <q-td v-for="col in props.cols" :key="col.name" :props="props">
+                    <q-rating v-if="col.name == 'review_int'" v-model="col.value" color="yellow" icon="star_border"
+                      icon-selected="star"></q-rating>
+                    <div v-else-if="col.name == 'review_text'"
+                      style="overflow-x: auto; white-space: nowrap; max-width:200px">
+                      ${ col.value }
+                    </div>
+                    <div v-else>${ col.value }</div>
+
+                  </q-td>
+                </q-tr>
+              </template>
+
+            </q-table>
+          </q-card-section>
+        </q-card>
+      </q-card-section>
+    </q-card>
+
+  </div>
+
+  <q-dialog v-model="showinvoice" position="top" @hide="closeFormDialog">
+    <q-card class="q-pa-lg q-pt-xl" style="width: 500px">
+      <a class="text-secondary" :href="'lightning:' + qrCode.toUpperCase()">
+        <q-responsive :ratio="1" class="q-mx-xl q-mb-md">
+          <qrcode :value="'lightning:' + qrCode.toUpperCase()" :options="{width: 800}" class="rounded-borders">
+          </qrcode>
+        </q-responsive>
+      </a>
+      <div class="row q-mt-lg">
+        <q-btn outline color="grey" @click="copyText(qrCode.toUpperCase())">Copy invoice</q-btn>
+        <q-btn @click="closeFormDialog" flat color="grey" class="q-ml-auto">Cancel</q-btn>
+      </div>
+    </q-card>
+  </q-dialog>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  Vue.component(VueQrcode.name, VueQrcode)
+  const mapReviews = obj => {
+    return obj
+  }
+  new Vue({
+    el: '#vue',
+    mixins: [windowMixin],
+    delimiters: ['${', '}'],
+    data: function () {
+      return {
+        reviews: [],
+        review_length: '{{review_length}}',
+        p2r_name: '{{p2r_name}}',
+        p2r_description: '{{p2r_description}}',
+        formDialog: {
+          data: {
+            p2r_id: '{{p2r_id}}',
+            item_id: '{{item_id}}',
+            pr2_price: '{{pr2_price}}',
+          },
+        },
+        showinvoice: false,
+        qrCode: "",
+        reviewsTable: {
+          columns: [
+            { name: 'name', align: 'left', label: 'Name', field: 'name' },
+            {
+              name: 'review_int',
+              align: 'left',
+              label: 'Rating',
+              field: 'review_int'
+            },
+            {
+              name: 'review_text',
+              align: 'left',
+              label: 'Review',
+              field: 'review_text'
+            },
+            {
+              name: 'review_date',
+              align: 'left',
+              label: 'Date',
+              field: 'review_date'
+            }
+          ],
+          pagination: {
+            rowsPerPage: 10
+          }
+        },
+      }
+    },
+    created: function () {
+    },
+    methods: {
+      closeFormDialog() {
+        this.qrCode = ""
+        this.showinvoice = false
+      },
+      connectWebsocket(review_id) {
+        const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://'
+        const localUrl = `${protocol}${document.domain}:${location.port}/api/v1/ws/${review_id}`
+        this.connection = new WebSocket(localUrl)
+        this.connection.onmessage = () => {
+          this.showinvoice = false
+          this.$q.notify({
+            message: 'Review created, thanks!',
+            color: 'positive',
+            icon: 'done'
+          })
+        }
+      },
+      sendReviewData() {
+        LNbits.api.request('POST', '/p2r/api/v1/p2r/reviews', null, this.formDialog.data)
+          .then(response => {
+            this.qrCode = response.data.payment_request
+            this.showinvoice = true
+            // Reset form data
+            this.formDialog.data.name = null
+            this.formDialog.data.review_text = null
+            this.formDialog.data.review_int = null
+            this.connectWebsocket(response.data.review_id)
+          })
+          .catch(LNbits.utils.notifyApiError)
+      },
+      getReviews() {
+        self = this
+        LNbits.api.request('GET', `/p2r/api/v1/p2r/reviews/${self.formDialog.data.p2r_id}?item_id=${self.formDialog.data.item_id}`)
+          .then(response => {
+            self.reviews = response.data.map(obj => mapReviews(obj))
+            console.log(self.reviews)
+          })
+      },
+    },
+    created: function () {
+      this.getReviews()
+    }
+  })
+</script>
+{% endblock %}

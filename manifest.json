@@ -1,0 +1,9 @@
+{
+  "repos": [
+    {
+      "id": "p2r",
+      "organisation": "arcbtc",
+      "repository": "pay2review"
+    }
+  ]
+}
